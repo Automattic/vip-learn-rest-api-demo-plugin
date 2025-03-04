@@ -3,7 +3,7 @@
  * Plugin Name: Live Updates
  * Plugin URI: https://learn.wpvip.com
  * Description: A live-blogging plugin demonstrating advanced use of the WordPress REST API
- * Version: 0.1.0
+ * Version: 0.1.1
  * Author: VIP Learn
  * Author URI: https://learn.wpvip.com
  * License: GPL v2 or later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Plugin version
-const PLUGIN_VERSION = '0.1.0';
+const PLUGIN_VERSION = '0.1.1';
 
 // Autoload classes
 spl_autoload_register(function ($class) {
