@@ -1,0 +1,28 @@
+# Dependencies
+/node_modules
+/vendor
+
+# Build files
+/build
+
+# Environment files
+.env
+.env.*
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# WordPress
+wp-config.php
+wp-content/uploads/
+wp-content/upgrade/
+wp-content/backup-db/
+wp-content/cache/
+wp-content/backups/ 
