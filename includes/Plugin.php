@@ -52,6 +52,10 @@ class Plugin {
 
         // Register editor assets
         add_action('enqueue_block_editor_assets', [$this, 'enqueue_editor_assets']);
+
+        // Initialize blocks
+        $blocks = new Blocks\LiveUpdates();
+        $blocks->init();
     }
 
     /**

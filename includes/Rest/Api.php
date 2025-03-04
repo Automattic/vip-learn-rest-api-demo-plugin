@@ -158,6 +158,9 @@ class Api {
 
 		$response = new WP_REST_Response($posts);
 		
+		// Add server timestamp to response
+		$response->header('X-Server-Time', time());
+		
 		// Add cache headers
 		$response->header('Cache-Control', 'public, max-age=300');
 

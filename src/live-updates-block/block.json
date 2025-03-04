@@ -1,0 +1,17 @@
+{
+    "apiVersion": 3,
+    "name": "live-updates/display",
+    "title": "Live Updates Display",
+    "category": "widgets",
+    "icon": "update",
+    "description": "Display live updates for a post",
+    "textdomain": "live-updates",
+    "attributes": {
+        "postId": {
+            "type": "string",
+            "default": ""
+        }
+    },
+    "editorScript": "file:./index.js",
+    "viewScript": "live-updates-frontend"
+} 
