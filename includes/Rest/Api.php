@@ -226,7 +226,20 @@ class Api {
 			);
 		}
 
-		list($username, $password) = explode(':', $credentials, 2);
+		list($raw_username, $raw_password) = explode(':', $credentials, 2);
+		
+		// Sanitize credentials
+		$username = \sanitize_user($raw_username);
+		$password = \sanitize_text_field($raw_password);
+
+		// Verify credentials are not empty after sanitization
+		if (empty($username) || empty($password)) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid credentials format.', 'live-updates'),
+				['status' => 401]
+			);
+		}
 		
 		// Get user by username or email
 		$user = \get_user_by('login', $username);
