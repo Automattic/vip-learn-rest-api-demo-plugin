@@ -75,6 +75,34 @@ class Api {
 				],
 			]
 		);
+
+		\register_rest_route(
+			self::API_NAMESPACE,
+			'/posts/(?P<parent_id>\d+)/create',
+			[
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => [$this, 'create_live_update'],
+				'permission_callback' => [$this, 'check_basic_auth'],
+				'args'               => [
+					'parent_id' => [
+						'required'          => true,
+						'validate_callback' => function($param) {
+							return is_numeric($param) && \get_post($param);
+						},
+					],
+					'title' => [
+						'required'          => true,
+						'type'             => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					],
+					'content' => [
+						'required'          => true,
+						'type'             => 'string',
+						'sanitize_callback' => 'wp_kses_post',
+					],
+				],
+			]
+		);
 	}
 
 	/**
@@ -169,5 +197,123 @@ class Api {
 		$response->header('X-WP-TotalPages', ceil($query->found_posts / $query->query_vars['posts_per_page']));
 
 		return $response;
+	}
+
+	/**
+	 * Check Basic Authentication using Application Passwords.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return bool|WP_Error True if authorized, WP_Error if not.
+	 */
+	public function check_basic_auth($request) {
+		// Get authentication header
+		$auth_header = $request->get_header('authorization');
+		if (!$auth_header || strpos($auth_header, 'Basic ') !== 0) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Missing authentication header.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		// Decode credentials
+		$credentials = base64_decode(substr($auth_header, 6));
+		if (!$credentials || strpos($credentials, ':') === false) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid authentication header.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		list($username, $password) = explode(':', $credentials, 2);
+		
+		// Get user by username or email
+		$user = \get_user_by('login', $username);
+		if (!$user) {
+			$user = \get_user_by('email', $username);
+		}
+
+		if (!$user) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid username.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		// Verify the application password using WordPress core function
+		$authenticated = \wp_authenticate_application_password(null, $username, $password);
+		if (\is_wp_error($authenticated)) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid application password.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		// Check if user has permission to create posts
+		if (!\user_can($user, 'publish_posts')) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('You do not have permission to create posts.', 'live-updates'),
+				['status' => 403]
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Create a live update.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return WP_REST_Response|WP_Error Response object.
+	 */
+	public function create_live_update($request) {
+		$parent_id = (int) $request->get_param('parent_id');
+		$title = $request->get_param('title');
+		$content = $request->get_param('content');
+
+		$post_data = [
+			'post_type'    => 'live-update',
+			'post_status'  => 'publish',
+			'post_title'   => $title,
+			'post_content' => $content,
+			'post_parent'  => $parent_id,
+		];
+
+		$post_id = \wp_insert_post($post_data, true);
+		if (\is_wp_error($post_id)) {
+			return $post_id;
+		}
+
+		$post = \get_post($post_id);
+		$response = $this->prepare_single_response($post);
+		$response->set_status(201);
+
+		return $response;
+	}
+
+	/**
+	 * Prepare single post response.
+	 *
+	 * @param \WP_Post $post Post object.
+	 * @return WP_REST_Response Response object.
+	 */
+	private function prepare_single_response(\WP_Post $post): WP_REST_Response {
+		$data = [
+			'id' => $post->ID,
+			'date' => \get_post_datetime($post)->format('c'),
+			'modified' => \get_post_modified_time('c', true, $post),
+			'title' => [
+				'rendered' => \get_the_title($post),
+			],
+			'content' => [
+				'rendered' => \apply_filters('the_content', $post->post_content),
+			],
+		];
+
+		return new WP_REST_Response($data, 201);
 	}
 } 
