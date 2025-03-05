@@ -24,10 +24,31 @@ class Api {
 	const API_NAMESPACE = 'liveupdates/v1';
 
 	/**
+	 * Option name for JWT secret.
+	 */
+	const JWT_SECRET_OPTION = 'live_updates_jwt_secret';
+
+	/**
+	 * JWT expiration time in seconds (24 hours).
+	 */
+	const JWT_EXPIRATION = 86400;
+
+	/**
 	 * Initialize the REST API.
 	 */
 	public function init(): void {
+		// Ensure we have a JWT secret
+		$this->ensure_jwt_secret();
 		add_action('rest_api_init', [$this, 'register_routes']);
+	}
+
+	/**
+	 * Ensure JWT secret exists.
+	 */
+	private function ensure_jwt_secret(): void {
+		if (!\get_option(self::JWT_SECRET_OPTION)) {
+			\add_option(self::JWT_SECRET_OPTION, \wp_generate_password(32, true, true));
+		}
 	}
 
 	/**
@@ -83,6 +104,46 @@ class Api {
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [$this, 'create_live_update'],
 				'permission_callback' => [$this, 'check_basic_auth'],
+				'args'               => [
+					'parent_id' => [
+						'required'          => true,
+						'validate_callback' => function($param) {
+							return is_numeric($param) && \get_post($param);
+						},
+					],
+					'title' => [
+						'required'          => true,
+						'type'             => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					],
+					'content' => [
+						'required'          => true,
+						'type'             => 'string',
+						'sanitize_callback' => 'wp_kses_post',
+					],
+				],
+			]
+		);
+
+		// JWT token endpoint
+		\register_rest_route(
+			self::API_NAMESPACE,
+			'/token',
+			[
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => [$this, 'generate_jwt_token'],
+				'permission_callback' => [$this, 'check_basic_auth'],
+			]
+		);
+
+		// Protected endpoint example using JWT
+		\register_rest_route(
+			self::API_NAMESPACE,
+			'/posts/(?P<parent_id>\d+)/create-with-jwt',
+			[
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => [$this, 'create_live_update'],
+				'permission_callback' => [$this, 'verify_jwt_auth'],
 				'args'               => [
 					'parent_id' => [
 						'required'          => true,
@@ -328,5 +389,164 @@ class Api {
 		];
 
 		return new WP_REST_Response($data, 201);
+	}
+
+	/**
+	 * Generate JWT token after successful basic auth.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return WP_REST_Response|WP_Error Response object.
+	 */
+	public function generate_jwt_token($request) {
+		$user = \wp_get_current_user();
+		if (!$user || !$user->ID) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid authentication.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		// Generate token
+		$issued_at = time();
+		$expiration = $issued_at + self::JWT_EXPIRATION;
+		
+		$payload = [
+			'iss' => \get_site_url(),
+			'iat' => $issued_at,
+			'exp' => $expiration,
+			'user_id' => $user->ID,
+		];
+
+		$token = $this->generate_token($payload);
+
+		return new \WP_REST_Response([
+			'token' => $token,
+			'expires_in' => self::JWT_EXPIRATION,
+		]);
+	}
+
+	/**
+	 * Verify JWT authentication.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return bool|WP_Error True if authorized, WP_Error if not.
+	 */
+	public function verify_jwt_auth($request) {
+		$auth_header = $request->get_header('authorization');
+		if (!$auth_header || strpos($auth_header, 'Bearer ') !== 0) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Missing JWT token.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		$token = substr($auth_header, 7);
+		$payload = $this->verify_token($token);
+		
+		if (\is_wp_error($payload)) {
+			return $payload;
+		}
+
+		// Set current user
+		\wp_set_current_user($payload['user_id']);
+		
+		return true;
+	}
+
+	/**
+	 * Generate JWT token.
+	 *
+	 * @param array  $payload Data to encode in the token.
+	 * @return string Generated token.
+	 */
+	private function generate_token(array $payload): string {
+		$secret = \get_option(self::JWT_SECRET_OPTION);
+		
+		$header = [
+			'typ' => 'JWT',
+			'alg' => 'HS256'
+		];
+
+		$base64_header = $this->base64url_encode(json_encode($header));
+		$base64_payload = $this->base64url_encode(json_encode($payload));
+		
+		$signature = hash_hmac('sha256', "$base64_header.$base64_payload", $secret, true);
+		$base64_signature = $this->base64url_encode($signature);
+
+		return "$base64_header.$base64_payload.$base64_signature";
+	}
+
+	/**
+	 * Verify JWT token.
+	 *
+	 * @param string $token JWT token.
+	 * @return array|WP_Error Payload if valid, WP_Error if not.
+	 */
+	private function verify_token(string $token) {
+		$token_parts = explode('.', $token);
+		if (count($token_parts) !== 3) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid token format.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		list($base64_header, $base64_payload, $base64_signature) = $token_parts;
+
+		$payload = json_decode($this->base64url_decode($base64_payload), true);
+		if (!$payload || !isset($payload['user_id'])) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid token payload.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		// Check expiration
+		if (isset($payload['exp']) && $payload['exp'] < time()) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Token has expired.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		// Verify signature using global secret
+		$secret = \get_option(self::JWT_SECRET_OPTION);
+		$signature = $this->base64url_decode($base64_signature);
+		$expected_signature = hash_hmac('sha256', "$base64_header.$base64_payload", $secret, true);
+		
+		if (!hash_equals($signature, $expected_signature)) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('Invalid token signature.', 'live-updates'),
+				['status' => 401]
+			);
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Base64URL encode.
+	 *
+	 * @param string $data Data to encode.
+	 * @return string Encoded data.
+	 */
+	private function base64url_encode(string $data): string {
+		return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+	}
+
+	/**
+	 * Base64URL decode.
+	 *
+	 * @param string $data Data to decode.
+	 * @return string Decoded data.
+	 */
+	private function base64url_decode(string $data): string {
+		return base64_decode(strtr($data, '-_', '+/'));
 	}
 } 
