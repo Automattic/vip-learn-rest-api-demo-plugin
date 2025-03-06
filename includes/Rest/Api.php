@@ -34,6 +34,11 @@ class Api {
 	const JWT_EXPIRATION = 86400;
 
 	/**
+	 * JWT algorithm.
+	 */
+	const JWT_ALGORITHM = 'HS256';
+
+	/**
 	 * Initialize the REST API.
 	 */
 	public function init(): void {
@@ -162,6 +167,17 @@ class Api {
 						'sanitize_callback' => 'wp_kses_post',
 					],
 				],
+			]
+		);
+
+		// JWT verification endpoint
+		\register_rest_route(
+			self::API_NAMESPACE,
+			'/verify-jwt',
+			[
+				'methods'             => \WP_REST_Server::READABLE,
+				'callback'            => [$this, 'verify_jwt_token'],
+				'permission_callback' => [$this, 'verify_jwt_auth'],
 			]
 		);
 	}
@@ -458,7 +474,7 @@ class Api {
 	/**
 	 * Generate JWT token.
 	 *
-	 * @param array  $payload Data to encode in the token.
+	 * @param array $payload Data to encode in the token.
 	 * @return string Generated token.
 	 */
 	private function generate_token(array $payload): string {
@@ -466,16 +482,34 @@ class Api {
 		
 		$header = [
 			'typ' => 'JWT',
-			'alg' => 'HS256'
+			'alg' => self::JWT_ALGORITHM
 		];
 
 		$base64_header = $this->base64url_encode(json_encode($header));
 		$base64_payload = $this->base64url_encode(json_encode($payload));
 		
-		$signature = hash_hmac('sha256', "$base64_header.$base64_payload", $secret, true);
+		// Use the defined algorithm
+		$signature = $this->generate_signature("$base64_header.$base64_payload", $secret);
 		$base64_signature = $this->base64url_encode($signature);
 
 		return "$base64_header.$base64_payload.$base64_signature";
+	}
+
+	/**
+	 * Generate signature based on algorithm.
+	 *
+	 * @param string $data Data to sign.
+	 * @param string $secret Secret key.
+	 * @return string Signature.
+	 */
+	private function generate_signature(string $data, string $secret): string {
+		switch (self::JWT_ALGORITHM) {
+			case 'HS256':
+				return hash_hmac('sha256', $data, $secret, true);
+			// Add support for other algorithms here if needed
+			default:
+				throw new \RuntimeException('Unsupported JWT algorithm');
+		}
 	}
 
 	/**
@@ -514,10 +548,10 @@ class Api {
 			);
 		}
 
-		// Verify signature using global secret
+		// Verify signature using global secret and defined algorithm
 		$secret = \get_option(self::JWT_SECRET_OPTION);
 		$signature = $this->base64url_decode($base64_signature);
-		$expected_signature = hash_hmac('sha256', "$base64_header.$base64_payload", $secret, true);
+		$expected_signature = $this->generate_signature("$base64_header.$base64_payload", $secret);
 		
 		if (!hash_equals($signature, $expected_signature)) {
 			return new \WP_Error(
@@ -548,5 +582,27 @@ class Api {
 	 */
 	private function base64url_decode(string $data): string {
 		return base64_decode(strtr($data, '-_', '+/'));
+	}
+
+	/**
+	 * Verify JWT token and return user information.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return WP_REST_Response Response object.
+	 */
+	public function verify_jwt_token($request): \WP_REST_Response {
+		// At this point, verify_jwt_auth has already validated the token
+		// and set the current user
+		$user = \wp_get_current_user();
+		
+		return new \WP_REST_Response([
+			'code'    => 'jwt_valid',
+			'message' => __('Token is valid.', 'live-updates'),
+			'data'    => [
+				'user_id'    => $user->ID,
+				'user_login' => $user->user_login,
+				'user_email' => $user->user_email,
+			],
+		], 200);
 	}
 } 
