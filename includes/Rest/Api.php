@@ -39,11 +39,30 @@ class Api {
 	const JWT_ALGORITHM = 'HS256';
 
 	/**
+	 * Rate limit requests per minute.
+	 */
+	const RATE_LIMIT_REQUESTS = 30;
+
+	/**
+	 * Rate limit window in seconds.
+	 */
+	const RATE_LIMIT_WINDOW = 60;
+
+	/**
+	 * Cache group for rate limiting.
+	 */
+	const RATE_LIMIT_CACHE_GROUP = 'live_updates_rate_limit';
+
+	/**
 	 * Initialize the REST API.
 	 */
 	public function init(): void {
 		// Ensure we have a JWT secret
 		$this->ensure_jwt_secret();
+		
+		// Add rate limiting
+		add_filter('rest_pre_dispatch', [$this, 'check_rate_limit'], 10, 3);
+		
 		add_action('rest_api_init', [$this, 'register_routes']);
 	}
 
@@ -178,6 +197,18 @@ class Api {
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => [$this, 'verify_jwt_token'],
 				'permission_callback' => [$this, 'verify_jwt_auth'],
+			]
+		);
+
+		// User profile endpoint
+		\register_rest_route(
+			self::API_NAMESPACE,
+			'/user-profile',
+			[
+				'methods'             => \WP_REST_Server::READABLE,
+				'callback'            => [$this, 'get_user_profile'],
+				'permission_callback' => [$this, 'verify_admin_jwt_auth'],
+				'schema'             => [$this, 'get_user_profile_schema'],
 			]
 		);
 	}
@@ -604,5 +635,257 @@ class Api {
 				'user_email' => $user->user_email,
 			],
 		], 200);
+	}
+
+	/**
+	 * Get user profile data.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return WP_REST_Response Response object.
+	 */
+	public function get_user_profile($request): \WP_REST_Response {
+		$user = \wp_get_current_user();
+		
+		$profile_data = [
+			'id'            => (int) $user->ID,
+			'username'      => $user->user_login,
+			'email'        => $user->user_email,
+			'display_name' => $user->display_name,
+			'first_name'   => $user->first_name,
+			'last_name'    => $user->last_name,
+			'url'          => $user->user_url,
+			'registered'   => \mysql_to_rfc3339($user->user_registered),
+			'roles'        => $user->roles,
+			'capabilities' => array_keys(array_filter($user->allcaps)),
+			'avatar_url'   => \get_avatar_url($user->ID),
+		];
+
+		return new \WP_REST_Response($profile_data, 200);
+	}
+
+	/**
+	 * Get user profile schema.
+	 *
+	 * @return array Schema array.
+	 */
+	public function get_user_profile_schema(): array {
+		return [
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'user-profile',
+			'type'      => 'object',
+			'properties' => [
+				'id' => [
+					'description' => __('Unique identifier for the user.', 'live-updates'),
+					'type'        => 'integer',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'username' => [
+					'description' => __('Login name for the user.', 'live-updates'),
+					'type'        => 'string',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'email' => [
+					'description' => __('Email address of the user.', 'live-updates'),
+					'type'        => 'string',
+					'format'      => 'email',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'display_name' => [
+					'description' => __('Display name of the user.', 'live-updates'),
+					'type'        => 'string',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'first_name' => [
+					'description' => __('First name of the user.', 'live-updates'),
+					'type'        => 'string',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'last_name' => [
+					'description' => __('Last name of the user.', 'live-updates'),
+					'type'        => 'string',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'url' => [
+					'description' => __('URL of the user.', 'live-updates'),
+					'type'        => 'string',
+					'format'      => 'uri',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'registered' => [
+					'description' => __('Registration date for the user.', 'live-updates'),
+					'type'        => 'string',
+					'format'      => 'date-time',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'roles' => [
+					'description' => __('Roles assigned to the user.', 'live-updates'),
+					'type'        => 'array',
+					'items'       => [
+						'type' => 'string',
+					],
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'capabilities' => [
+					'description' => __('All capabilities the user has.', 'live-updates'),
+					'type'        => 'array',
+					'items'       => [
+						'type' => 'string',
+					],
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+				'avatar_url' => [
+					'description' => __('URL of the user\'s avatar image.', 'live-updates'),
+					'type'        => 'string',
+					'format'      => 'uri',
+					'context'     => ['view'],
+					'readonly'    => true,
+				],
+			],
+		];
+	}
+
+	/**
+	 * Verify JWT auth and admin capabilities.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @return bool|WP_Error True if authorized, WP_Error if not.
+	 */
+	public function verify_admin_jwt_auth($request) {
+		// First verify JWT auth
+		$jwt_result = $this->verify_jwt_auth($request);
+		if (\is_wp_error($jwt_result)) {
+			return $jwt_result;
+		}
+
+		// Then check for manage_options capability
+		if (!\current_user_can('manage_options')) {
+			return new \WP_Error(
+				'rest_forbidden',
+				__('You do not have sufficient permissions to access this endpoint.', 'live-updates'),
+				['status' => 403]
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check rate limit for requests.
+	 *
+	 * @param mixed           $result  Response to replace the requested version with.
+	 * @param WP_REST_Server $server  Server instance.
+	 * @param WP_REST_Request $request Request used to generate the response.
+	 * @return mixed|WP_Error
+	 */
+	public function check_rate_limit($result, $server, $request) {
+		// Only rate limit our namespace
+		if (strpos($request->get_route(), '/' . self::API_NAMESPACE) !== 0) {
+			return $result;
+		}
+
+		$ip = $this->get_client_ip();
+		$cache_key = 'rate_limit_' . md5($ip);
+		
+		// Get current requests count and timestamp
+		$rate_data = wp_cache_get($cache_key, self::RATE_LIMIT_CACHE_GROUP);
+		$current_time = time();
+		
+		if (false === $rate_data) {
+			// First request from this IP
+			$rate_data = [
+				'count' => 1,
+				'timestamp' => $current_time,
+			];
+		} else {
+			// Check if we're in a new window
+			if (($current_time - $rate_data['timestamp']) > self::RATE_LIMIT_WINDOW) {
+				$rate_data = [
+					'count' => 1,
+					'timestamp' => $current_time,
+				];
+			} else {
+				// Increment request count
+				$rate_data['count']++;
+			}
+		}
+
+		// Store updated rate data
+		wp_cache_set(
+			$cache_key,
+			$rate_data,
+			self::RATE_LIMIT_CACHE_GROUP,
+			self::RATE_LIMIT_WINDOW
+		);
+
+		// Check if rate limit exceeded
+		if ($rate_data['count'] > self::RATE_LIMIT_REQUESTS) {
+			$retry_after = $rate_data['timestamp'] + self::RATE_LIMIT_WINDOW - $current_time;
+			
+			return new \WP_Error(
+				'rest_rate_limited',
+				__('Too many requests, please try again later.', 'live-updates'),
+				[
+					'status' => 429,
+					'headers' => [
+						'Retry-After' => $retry_after,
+						'X-RateLimit-Limit' => self::RATE_LIMIT_REQUESTS,
+						'X-RateLimit-Remaining' => 0,
+						'X-RateLimit-Reset' => $rate_data['timestamp'] + self::RATE_LIMIT_WINDOW,
+					],
+				]
+			);
+		}
+
+		// Add rate limit headers to successful responses
+		add_filter('rest_post_dispatch', function($response) use ($rate_data) {
+			if ($response instanceof \WP_REST_Response) {
+				$response->header('X-RateLimit-Limit', self::RATE_LIMIT_REQUESTS);
+				$response->header(
+					'X-RateLimit-Remaining',
+					max(0, self::RATE_LIMIT_REQUESTS - $rate_data['count'])
+				);
+				$response->header(
+					'X-RateLimit-Reset',
+					$rate_data['timestamp'] + self::RATE_LIMIT_WINDOW
+				);
+			}
+			return $response;
+		});
+
+		return $result;
+	}
+
+	/**
+	 * Get client IP address.
+	 *
+	 * @return string
+	 */
+	private function get_client_ip(): string {
+		$ip = '';
+		
+		// Check for CloudFlare IP
+		if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+			$ip = $_SERVER['HTTP_CF_CONNECTING_IP'];
+		}
+		// Check for proxy headers
+		elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+			$ip = array_map('trim', explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']))[0];
+		}
+		// Fallback to REMOTE_ADDR
+		elseif (!empty($_SERVER['REMOTE_ADDR'])) {
+			$ip = $_SERVER['REMOTE_ADDR'];
+		}
+
+		return (string) $ip;
 	}
 } 
