@@ -1,16 +1,8 @@
 import { __ } from '@wordpress/i18n';
-import { useSelect, useDispatch } from '@wordpress/data';
-import { PluginDocumentSettingPanel } from '@wordpress/edit-post';
-import { ComboboxControl } from '@wordpress/components';
 import { registerPlugin } from '@wordpress/plugins';
-import DOMPurify from 'dompurify';
-
-const sanitizeHTML = (html) => {
-    return DOMPurify.sanitize(html, {
-        ALLOWED_TAGS: ['span'],
-        ALLOWED_ATTR: ['class']
-    });
-};
+import { PluginDocumentSettingPanel } from '@wordpress/edit-post';
+import { useSelect, useDispatch } from '@wordpress/data';
+import { ComboboxControl } from '@wordpress/components';
 
 const PostSelector = () => {
     const { editPost } = useDispatch('core/editor');
@@ -29,13 +21,7 @@ const PostSelector = () => {
 
     const options = searchResults
         ? searchResults.map((post) => ({
-            label: (
-                <div
-                    dangerouslySetInnerHTML={{ 
-                        __html: sanitizeHTML(post.title.rendered) 
-                    }}
-                />
-            ),
+            label: post.title.rendered,
             value: post.id,
         }))
         : [];

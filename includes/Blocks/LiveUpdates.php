@@ -40,6 +40,15 @@ class LiveUpdates {
             true
         );
 
+        // Uncomment the post selector script registration
+        \wp_register_script(
+            'live-updates-post-selector',
+            \plugins_url('build/post-selector/index.js', dirname(__DIR__)),
+            ['wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-i18n'],
+            \LiveUpdates\PLUGIN_VERSION,
+            true
+        );
+
         // Register block
         \register_block_type('live-updates/display', [
             'editor_script' => 'live-updates-block',

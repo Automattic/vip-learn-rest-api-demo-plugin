@@ -253,7 +253,7 @@ class Api {
 			'post_parent' => $post_id,
 			'date_query'  => [
 				[
-					'after'     => date('c', $timestamp),
+					'after'     => gmdate('c', $timestamp),
 					'inclusive' => false,
 				],
 			],
@@ -312,20 +312,46 @@ class Api {
 	 */
 	private function prepare_response(\WP_Query $query): \WP_REST_Response {
 		$posts = array_map(function($post) {
+			// Ensure post is valid
+			if (!is_object($post) || !isset($post->ID)) {
+				return null;
+			}
+
+			// Get post datetime safely
+			$datetime = \get_post_datetime($post);
+			if (!$datetime) {
+				$datetime = new \DateTime();
+			}
+
+			// Get title safely
+			$title = \get_the_title($post);
+			if (!is_string($title)) {
+				$title = '';
+			}
+
+			// Get content safely
+			$content = $post->post_content;
+			if (!is_string($content)) {
+				$content = '';
+			}
+
 			return [
-				'id' => $post->ID,
-				'date' => \get_post_datetime($post)->format('c'),
-				'modified' => \get_post_modified_time('c', true, $post),
+				'id' => (int) $post->ID,
+				'date' => $datetime->format('c'),
+				'modified' => \get_post_modified_time('c', true, $post) ?: $datetime->format('c'),
 				'title' => [
-					'rendered' => \get_the_title($post),
+					'rendered' => $title,
 				],
 				'content' => [
-					'rendered' => \apply_filters('the_content', $post->post_content),
+					'rendered' => \apply_filters('the_content', $content),
 				],
 			];
 		}, $query->posts);
 
-		$response = new \WP_REST_Response($posts);
+		// Filter out any null values from invalid posts
+		$posts = array_filter($posts);
+
+		$response = new \WP_REST_Response(array_values($posts));
 		
 		// Add server timestamp to response
 		$response->header('X-Server-Time', time());
