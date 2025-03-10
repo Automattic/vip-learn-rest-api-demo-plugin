@@ -54,6 +54,16 @@ class Api {
 	const RATE_LIMIT_CACHE_GROUP = 'live_updates_rate_limit';
 
 	/**
+	 * Cache group for live updates queries.
+	 */
+	const LIVE_UPDATES_CACHE_GROUP = 'live_updates_queries';
+
+	/**
+	 * Cache time for live updates queries in seconds (5 minutes).
+	 */
+	const LIVE_UPDATES_CACHE_TIME = 300;
+
+	/**
 	 * Initialize the REST API.
 	 */
 	public function init(): void {
@@ -270,17 +280,37 @@ class Api {
 
 		// Merge with custom args, allowing post_parent to be overridden
 		$query_args = wp_parse_args($args, $default_args);
+		
+		// Generate cache key based on query args
+		$cache_key = 'live_updates_' . md5(serialize($query_args));
+		
+		// Try to get from cache first
+		$cached_query = wp_cache_get($cache_key, self::LIVE_UPDATES_CACHE_GROUP);
+		if (false !== $cached_query) {
+			return $cached_query;
+		}
 
-		return new \WP_Query($query_args);
+		// If not in cache, run query
+		$query = new \WP_Query($query_args);
+		
+		// Cache the query
+		wp_cache_set(
+			$cache_key, 
+			$query, 
+			self::LIVE_UPDATES_CACHE_GROUP, 
+			self::LIVE_UPDATES_CACHE_TIME
+		);
+
+		return $query;
 	}
 
 	/**
-	 * Prepare response.
+	 * Prepare response with common headers and caching.
 	 *
-	 * @param \WP_Query $query Query object.
+	 * @param WP_Query $query Query object.
 	 * @return WP_REST_Response Response object.
 	 */
-	private function prepare_response(\WP_Query $query): WP_REST_Response {
+	private function prepare_response(\WP_Query $query): \WP_REST_Response {
 		$posts = array_map(function($post) {
 			return [
 				'id' => $post->ID,
@@ -295,7 +325,7 @@ class Api {
 			];
 		}, $query->posts);
 
-		$response = new WP_REST_Response($posts);
+		$response = new \WP_REST_Response($posts);
 		
 		// Add server timestamp to response
 		$response->header('X-Server-Time', time());
@@ -306,6 +336,9 @@ class Api {
 		// Add pagination headers
 		$response->header('X-WP-Total', $query->found_posts);
 		$response->header('X-WP-TotalPages', ceil($query->found_posts / $query->query_vars['posts_per_page']));
+
+		// Add Access-Control-Expose-Headers
+		$response->header('Access-Control-Expose-Headers', 'X-Server-Time, X-WP-Total, X-WP-TotalPages');
 
 		return $response;
 	}

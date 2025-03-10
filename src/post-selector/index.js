@@ -3,6 +3,14 @@ import { useSelect, useDispatch } from '@wordpress/data';
 import { PluginDocumentSettingPanel } from '@wordpress/edit-post';
 import { ComboboxControl } from '@wordpress/components';
 import { registerPlugin } from '@wordpress/plugins';
+import DOMPurify from 'dompurify';
+
+const sanitizeHTML = (html) => {
+    return DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['span'],
+        ALLOWED_ATTR: ['class']
+    });
+};
 
 const PostSelector = () => {
     const { editPost } = useDispatch('core/editor');
@@ -21,7 +29,13 @@ const PostSelector = () => {
 
     const options = searchResults
         ? searchResults.map((post) => ({
-            label: post.title.rendered,
+            label: (
+                <div
+                    dangerouslySetInnerHTML={{ 
+                        __html: sanitizeHTML(post.title.rendered) 
+                    }}
+                />
+            ),
             value: post.id,
         }))
         : [];

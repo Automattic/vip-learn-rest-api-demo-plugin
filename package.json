@@ -18,5 +18,8 @@
   },
   "devDependencies": {
     "@wordpress/scripts": "^26.0.0"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.4"
   }
-} 
+}

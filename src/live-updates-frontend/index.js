@@ -2,9 +2,18 @@ import { render } from '@wordpress/element';
 import { useState, useEffect, useCallback } from '@wordpress/element';
 import apiFetch from '@wordpress/api-fetch';
 import { __ } from '@wordpress/i18n';
+import DOMPurify from 'dompurify';
 
 const BASE_INTERVAL = 30000; // 30 seconds
 const MAX_JITTER = 20000;   // 20 seconds
+
+// Configure DOMPurify to allow specific tags
+const sanitizeHTML = (html) => {
+    return DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['p', 'a', 'strong', 'em', 'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'h5', 'h6'],
+        ALLOWED_ATTR: ['href', 'target', 'rel', 'class']
+    });
+};
 
 const LiveUpdates = ({ postId }) => {
     const [updates, setUpdates] = useState([]);
@@ -90,7 +99,11 @@ const LiveUpdates = ({ postId }) => {
                         <h3 dangerouslySetInnerHTML={{ __html: update.title.rendered }} />
                         <time dateTime={update.date}>{new Date(update.date).toLocaleString()}</time>
                     </header>
-                    <div dangerouslySetInnerHTML={{ __html: update.content.rendered }} />
+                    <div 
+                        dangerouslySetInnerHTML={{ 
+                            __html: sanitizeHTML(update.content.rendered) 
+                        }} 
+                    />
                 </article>
             ))}
         </div>
