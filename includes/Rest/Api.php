@@ -224,7 +224,6 @@ class Api {
 		
 		$query = $this->get_live_updates_query([
 			'post_parent' => $post_id,
-			'posts_per_page' => 20,
 		]);
 
 		return $this->prepare_response($query);
@@ -265,10 +264,14 @@ class Api {
 			'post_status'    => 'publish',
 			'orderby'        => 'date',
 			'order'          => 'DESC',
-			'no_found_rows'  => false,
+			'post_parent'    => 0,  // Default parent ID
+			'posts_per_page' => 20,
 		];
 
-		return new \WP_Query(wp_parse_args($args, $default_args));
+		// Merge with custom args, allowing post_parent to be overridden
+		$query_args = wp_parse_args($args, $default_args);
+
+		return new \WP_Query($query_args);
 	}
 
 	/**
