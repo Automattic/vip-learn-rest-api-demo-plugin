@@ -1,4 +1,4 @@
-# Live Updates Plugin
+# VIP Learn REST API Demo plugin
 
 This is a demo plugin created for the VIP Learn Course "Advanced WordPress REST API". It demonstrates REST API concepts and best practices in WordPress.
 

@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: Live Updates
+ * Plugin Name: VIP Learn REST API Demo plugin
  * Plugin URI: https://learn.wpvip.com
  * Description: A live-blogging plugin demonstrating advanced use of the WordPress REST API
  * Version: 0.1.2
