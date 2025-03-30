@@ -56,6 +56,10 @@ class Plugin {
         // Initialize blocks
         $blocks = new Blocks\LiveUpdates();
         $blocks->init();
+
+        // Initialize REST API Viewer
+        $viewer = new Admin\ResponseViewer();
+        $viewer->init();
     }
 
     /**

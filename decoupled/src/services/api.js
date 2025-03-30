@@ -72,19 +72,12 @@ export const fetchUpdatesSince = async (postId, timestamp) => {
         const data = await response.json();
         console.log('Received update data:', data);
 
-        // Get server time from header or use current timestamp as fallback
+        // Server time synchronization
         const serverTimeHeader = response.headers.get('X-Server-Time');
-        console.log('X-Server-Time header value:', serverTimeHeader);
-        
-        if (!serverTimeHeader) {
-            console.log('X-Server-Time header not found, using current timestamp');
-        }
         const serverTime = serverTimeHeader
             ? parseInt(serverTimeHeader, 10)
             : Math.floor(Date.now() / 1000);
             
-        console.log('Server time:', serverTime, serverTimeHeader ? '(from header)' : '(current time)');
-        
         return { data, serverTime };
     } catch (error) {
         console.error('Error checking for updates:', error);

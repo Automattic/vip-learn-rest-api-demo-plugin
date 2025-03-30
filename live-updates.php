@@ -21,8 +21,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Plugin version
-const PLUGIN_VERSION = '0.1.1';
+// Define plugin version
+const PLUGIN_VERSION = '0.1.2';
 
 // Autoload classes
 spl_autoload_register(function ($class) {

@@ -25,4 +25,7 @@ wp-content/uploads/
 wp-content/upgrade/
 wp-content/backup-db/
 wp-content/cache/
-wp-content/backups/ 
+wp-content/backups/
+
+# Lesson
+lessons

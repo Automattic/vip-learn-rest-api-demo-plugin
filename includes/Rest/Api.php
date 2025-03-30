@@ -74,6 +74,10 @@ class Api {
 		add_filter('rest_pre_dispatch', [$this, 'check_rate_limit'], 10, 3);
 		
 		add_action('rest_api_init', [$this, 'register_routes']);
+
+		// Add cache invalidation hooks
+		add_action('save_post_live-update', [$this, 'invalidate_cache']);
+		add_action('delete_post', [$this, 'invalidate_cache']);
 	}
 
 	/**
@@ -102,6 +106,14 @@ class Api {
 						'validate_callback' => function($param) {
 							return is_numeric($param) && get_post($param);
 						},
+					],
+					'per_page' => [
+						'required' => false,
+						'default' => 20,
+						'validate_callback' => function($param) {
+							return is_numeric($param) && $param > 0 && $param <= 100;
+						},
+						'sanitize_callback' => 'absint',
 					],
 				],
 			]
@@ -274,12 +286,15 @@ class Api {
 			'post_status'    => 'publish',
 			'orderby'        => 'date',
 			'order'          => 'DESC',
-			'post_parent'    => 0,  // Default parent ID
+			'post_parent'    => 0,
 			'posts_per_page' => 20,
 		];
 
-		// Merge with custom args, allowing post_parent to be overridden
 		$query_args = wp_parse_args($args, $default_args);
+		
+		// Module 5 lab: Exercise 2 - Add filter for query arguments
+		// This allows developers to modify the query args before execution
+		$query_args = apply_filters('live_updates_query_args', $query_args, $args);
 		
 		// Generate cache key based on query args
 		$cache_key = 'live_updates_' . md5(serialize($query_args));
@@ -290,7 +305,6 @@ class Api {
 			return $cached_query;
 		}
 
-		// If not in cache, run query
 		$query = new \WP_Query($query_args);
 		
 		// Cache the query
@@ -351,7 +365,11 @@ class Api {
 		// Filter out any null values from invalid posts
 		$posts = array_filter($posts);
 
-		$response = new \WP_REST_Response(array_values($posts));
+		// Module 5 lab: Exercise 3 - Add filter for response data
+		// This allows developers to modify the response data before it's sent
+		$posts = apply_filters('live_updates_response_data', array_values($posts), $query);
+
+		$response = new \WP_REST_Response($posts);
 		
 		// Add server timestamp to response
 		$response->header('X-Server-Time', time());
@@ -362,9 +380,6 @@ class Api {
 		// Add pagination headers
 		$response->header('X-WP-Total', $query->found_posts);
 		$response->header('X-WP-TotalPages', ceil($query->found_posts / $query->query_vars['posts_per_page']));
-
-		// Add Access-Control-Expose-Headers
-		$response->header('Access-Control-Expose-Headers', 'X-Server-Time, X-WP-Total, X-WP-TotalPages');
 
 		return $response;
 	}
@@ -949,5 +964,20 @@ class Api {
 		}
 
 		return (string) $ip;
+	}
+
+	/**
+	 * Invalidate cache for a post.
+	 *
+	 * @param int $post_id Post ID.
+	 */
+	public function invalidate_cache(int $post_id): void {
+		$parent_id = wp_get_post_parent_id($post_id);
+		if ($parent_id) {
+			wp_cache_delete(
+				'live_updates_' . md5(serialize(['post_parent' => $parent_id])),
+				self::LIVE_UPDATES_CACHE_GROUP
+			);
+		}
 	}
 } 

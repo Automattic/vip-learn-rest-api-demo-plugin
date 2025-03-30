@@ -1,0 +1,31 @@
+.rest-api-viewer {
+    margin: 20px 0;
+}
+
+.rest-api-viewer__controls {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    margin-bottom: 20px;
+}
+
+.rest-api-viewer__route-input {
+    flex: 1;
+}
+
+.rest-api-viewer__response pre {
+    background: #f0f0f1;
+    padding: 15px;
+    overflow: auto;
+    max-height: 500px;
+    margin: 0;
+    font-family: monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.rest-api-viewer__error {
+    color: #d63638;
+    margin-bottom: 20px;
+} 
