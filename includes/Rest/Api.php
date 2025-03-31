@@ -233,6 +233,9 @@ class Api {
 				'schema'             => [$this, 'get_user_profile_schema'],
 			]
 		);
+
+		// Debug example endpoint
+		$this->register_debug_example_route();
 	}
 
 	/**
@@ -979,5 +982,60 @@ class Api {
 				self::LIVE_UPDATES_CACHE_GROUP
 			);
 		}
+	}
+
+	/**
+	 * Example endpoint with common issues for debugging practice
+	 */
+	public function register_debug_example_route(): void {
+		register_rest_route(
+			self::API_NAMESPACE,
+			'/debug-example/(?P<id>\d+)',
+			[
+				'methods' => WP_REST_Server::READABLE,
+				'callback' => [$this, 'get_debug_example'],
+				'permission_callback' => '__return_true',
+				'args' => [
+					'id' => [
+						'required' => true,
+						'validate_callback' => function($param) {
+							return is_numeric($param);
+						},
+					],
+				],
+			]
+		);
+	}
+
+	/**
+	 * Callback for debug example endpoint
+	 * 
+	 * @param WP_REST_Request $request Request object
+	 * @return WP_REST_Response|WP_Error Response object
+	 */
+	public function get_debug_example(WP_REST_Request $request): WP_REST_Response|WP_Error {
+		$post_id = $request->get_param('id');
+		$post = get_post($post_id);
+
+		// Intentionally problematic code for debugging practice
+		if ($post) {
+			$response_data = [
+				'id' => $post->ID,
+				'title' => $post->post_title,
+				'content' => apply_filters('the_content', $post->post_content),
+				'meta' => get_post_meta($post->ID),
+				'author' => [
+					'id' => $post->post_author,
+					'name' => get_the_author_meta('display_name', $post->post_author),
+				],
+			];
+			return new WP_REST_Response($response_data);
+		}
+
+		return new WP_Error(
+			'post_not_found',
+			__('Post not found', 'live-updates'),
+			['status' => 404]
+		);
 	}
 } 

@@ -3,7 +3,7 @@
  * Plugin Name: VIP Learn REST API Demo plugin
  * Plugin URI: https://learn.wpvip.com
  * Description: A live-blogging plugin demonstrating advanced use of the WordPress REST API
- * Version: 0.1.2
+ * Version: 0.1.3
  * Author: VIP Learn
  * Author URI: https://learn.wpvip.com
  * License: GPL v2 or later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin version
-const PLUGIN_VERSION = '0.1.2';
+const PLUGIN_VERSION = '0.1.3';
 
 // Autoload classes
 spl_autoload_register(function ($class) {
