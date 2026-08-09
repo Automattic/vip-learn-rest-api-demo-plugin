@@ -20,7 +20,7 @@
     "@wordpress/scripts": "^26.0.0"
   },
   "dependencies": {
-    "dompurify": "^3.2.4"
+    "dompurify": "^3.4.13"
   },
   "overrides": {
     "basic-ftp": "5.3.1",
