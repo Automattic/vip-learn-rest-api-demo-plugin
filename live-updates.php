@@ -44,4 +44,7 @@ spl_autoload_register(function ($class) {
 // Initialize plugin
 add_action('plugins_loaded', function () {
     Plugin::get_instance();
-}); 
+});
+
+// Load the standalone lesson examples when they are explicitly enabled.
+require_once plugin_dir_path(__FILE__) . 'examples/securing-api-data/load-examples.php';
