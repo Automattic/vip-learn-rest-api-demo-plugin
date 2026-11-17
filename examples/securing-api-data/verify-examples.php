@@ -154,5 +154,41 @@ $check(
     isset( $data['schema'] ) ? 'title=' . $data['schema']['title'] : 'schema missing'
 );
 
+// --- 07: nonces on the cookie-authentication path -------------------------
+wp_set_current_user( 0 );
+$response = rest_do_request( new WP_REST_Request( 'POST', '/custom/v1/subscribe' ) );
+$check(
+    '07 anonymous subscribe is refused',
+    in_array( $response->get_status(), array( 401, 403 ), true ),
+    'status ' . $response->get_status()
+);
+
+wp_set_current_user( $admin->ID );
+$response = rest_do_request( new WP_REST_Request( 'POST', '/custom/v1/subscribe' ) );
+$check( '07 logged-in subscribe succeeds', 200 === $response->get_status(),
+    (string) wp_json_encode( $response->get_data() ) );
+
+// Why the example does not roll its own nonce: core checks _wpnonce itself,
+// against the wp_rest action, before any callback runs.
+$GLOBALS['wp_rest_auth_cookie'] = true;
+
+$_REQUEST['_wpnonce'] = wp_create_nonce( 'some_custom_action' );
+$result = rest_cookie_check_errors( null );
+$check(
+    '07 a custom nonce in _wpnonce is rejected by core',
+    is_wp_error( $result ) && 'rest_cookie_invalid_nonce' === $result->get_error_code(),
+    is_wp_error( $result ) ? $result->get_error_code() : 'allowed through'
+);
+
+$_REQUEST['_wpnonce'] = wp_create_nonce( 'wp_rest' );
+$result = rest_cookie_check_errors( null );
+$check(
+    '07 a wp_rest nonce passes',
+    ! is_wp_error( $result ),
+    is_wp_error( $result ) ? $result->get_error_code() : 'allowed through'
+);
+
+unset( $_REQUEST['_wpnonce'], $GLOBALS['wp_rest_auth_cookie'] );
+
 printf( "\n%d check(s) failed.\n", $failures );
 exit( $failures > 0 ? 1 : 0 );
