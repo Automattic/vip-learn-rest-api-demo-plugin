@@ -16,6 +16,7 @@ line.
 | `04-output-escaping.php` | Escaping Output Data |
 | `05-limiting-data-exposure.php` | Limiting Data Exposure |
 | `06-response-schema.php` | Using JSON Schema for Response Validation |
+| `07-nonces-and-cookie-auth.php` | Using Nonces for CSRF Protection |
 
 ## Enabling them
 
@@ -29,13 +30,13 @@ define( 'VIP_LEARN_LOAD_EXAMPLES', true );
 ## Verifying them
 
 `verify-examples.php` exercises every example against the running site and
-exits non-zero if a check fails:
+exits non-zero if a check fails. One check deliberately triggers a nonce failure, so WP-CLI prints a harmless `Cannot modify header information` warning:
 
 ```bash
 wp eval-file wp-content/plugins/vip-learn-rest-api-demo-plugin/examples/securing-api-data/verify-examples.php
 ```
 
-## Three things worth knowing
+## Four things worth knowing
 
 These came out of testing the lesson's original snippets, and each one is a
 silent failure rather than an obvious one:
@@ -51,7 +52,17 @@ silent failure rather than an obvious one:
    second argument is `true`. An `is_wp_error()` check against the default
    return value never fires.
 
-3. **`schema` is a route option, not an endpoint option.** When the array
+3. **Core already does the CSRF check for cookie-authenticated requests.**
+   It reads `$_REQUEST['_wpnonce']` ahead of the `X-WP-Nonce` header and
+   verifies it against the `wp_rest` action, before any callback runs. Sending
+   your own nonce under the `_wpnonce` name therefore fails that check and
+   returns `403 rest_cookie_invalid_nonce`. Without a valid nonce the request
+   is downgraded to anonymous rather than failing open, so the
+   `permission_callback` is what protects the endpoint. `check_admin_referer()`
+   has no place in a REST callback either — it calls `wp_nonce_ays()`, which
+   renders an HTML page and exits.
+
+4. **`schema` is a route option, not an endpoint option.** When the array
    passed to `register_rest_route()` has `callback` at its top level, core
    treats the whole array as one endpoint and wraps it — carrying `schema`
    inside, where nothing reads it. The schema is then silently missing from
